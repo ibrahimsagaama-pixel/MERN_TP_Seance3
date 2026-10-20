@@ -1,103 +1,161 @@
 
-let articles = [
-    { id: 1, title: "Bienvenue sur le blog", author: "Admin" },
-    { id: 2, title: "Mon premier serveur Express", author: "Aya" },
-    { id: 3, title: "Tester une API avec Postman", author: "Aya" }
-];
+const mongoose = require("mongoose");
+const Article = require("../models/articleModel");
 
-let prochainId = 4;
+// GET : récupérer tous les articles avec les informations de l'auteur
+const getAllArticles = async (req, res) => {
+    try {
+        const articles = await Article.find()
+            .populate("author", "name email");
 
-// GET : récupérer tous les articles
-const getAllArticles = (req, res) => {
-    const { author } = req.query;
-    let resultat = articles;
-
-    if (author) {
-        resultat = articles.filter(a => a.author === author);
+        res.status(200).json({
+            total: articles.length,
+            articles
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-
-    res.status(200).json({
-        total: resultat.length,
-        articles: resultat
-    });
 };
 
 // GET : récupérer un article par son ID
-const getArticleById = (req, res) => {
-    const id = Number(req.params.id);
-    const article = articles.find(a => a.id === id);
+const getArticleById = async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({
+                error: "ID article invalide"
+            });
+        }
 
-    if (!article) {
-        return res.status(404).json({
-            error: `Article ${id} introuvable`
-        });
+        const article = await Article.findById(req.params.id)
+            .populate("author", "name email");
+
+        if (!article) {
+            return res.status(404).json({
+                error: "Article introuvable"
+            });
+        }
+
+        res.status(200).json(article);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-
-    res.status(200).json(article);
 };
 
 // POST : créer un article
-const createArticle = (req, res) => {
-    const { title, author } = req.body;
+const createArticle = async (req, res) => {
+    try {
+        const { title, content, author } = req.body;
 
-    if (!title || !author) {
-        return res.status(400).json({
-            error: "Le titre et l'auteur sont obligatoires"
+        if (!title || !content || !author) {
+            return res.status(400).json({
+                error: "Le titre, le contenu et l'auteur sont obligatoires"
+            });
+        }
+
+        if (!mongoose.isValidObjectId(author)) {
+            return res.status(400).json({
+                error: "ID auteur invalide"
+            });
+        }
+
+        const nouvelArticle = await Article.create({
+            title,
+            content,
+            author
         });
+
+        await nouvelArticle.populate("author", "name email");
+
+        res.status(201).json({
+            message: "Article créé avec succès",
+            article: nouvelArticle
+        });
+    } catch (error) {
+        if (error.name === "ValidationError") {
+            return res.status(400).json({
+                error: error.message
+            });
+        }
+
+        res.status(500).json({ error: error.message });
     }
-
-    const nouvelArticle = {
-        id: prochainId++,
-        title,
-        author
-    };
-
-    articles.push(nouvelArticle);
-
-    res.status(201).json({
-        message: "Article créé",
-        article: nouvelArticle
-    });
 };
 
 // PUT : modifier un article
-const updateArticle = (req, res) => {
-    const id = Number(req.params.id);
-    const { title, author } = req.body;
+const updateArticle = async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({
+                error: "ID article invalide"
+            });
+        }
 
-    const index = articles.findIndex(a => a.id === id);
+        const { title, content, author } = req.body;
+        const modifications = {};
 
-    if (index === -1) {
-        return res.status(404).json({
-            error: `Article ${id} introuvable`
+        if (title !== undefined) modifications.title = title;
+        if (content !== undefined) modifications.content = content;
+
+        if (author !== undefined) {
+            if (!mongoose.isValidObjectId(author)) {
+                return res.status(400).json({
+                    error: "ID auteur invalide"
+                });
+            }
+
+            modifications.author = author;
+        }
+
+        const article = await Article.findByIdAndUpdate(
+            req.params.id,
+            modifications,
+            { new: true, runValidators: true }
+        ).populate("author", "name email");
+
+        if (!article) {
+            return res.status(404).json({
+                error: "Article introuvable"
+            });
+        }
+
+        res.status(200).json({
+            message: "Article mis à jour",
+            article
         });
+    } catch (error) {
+        if (error.name === "ValidationError") {
+            return res.status(400).json({
+                error: error.message
+            });
+        }
+
+        res.status(500).json({ error: error.message });
     }
-
-    if (title) articles[index].title = title;
-    if (author) articles[index].author = author;
-
-    res.status(200).json({
-        message: "Article mis à jour",
-        article: articles[index]
-    });
 };
 
 // DELETE : supprimer un article
-const deleteArticle = (req, res) => {
-    const id = Number(req.params.id);
-    const existe = articles.some(a => a.id === id);
+const deleteArticle = async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({
+                error: "ID article invalide"
+            });
+        }
 
-    if (!existe) {
-        return res.status(404).json({
-            error: `Article ${id} introuvable`
+        const article = await Article.findByIdAndDelete(req.params.id);
+
+        if (!article) {
+            return res.status(404).json({
+                error: "Article introuvable"
+            });
+        }
+
+        res.status(200).json({
+            message: "Article supprimé avec succès"
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-
-    articles = articles.filter(a => a.id !== id);
-
-    res.status(200).json({
-        message: `Article ${id} supprimé avec succès`
-    });
 };
 
 module.exports = {
